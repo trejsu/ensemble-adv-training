@@ -13,11 +13,6 @@ FLAGS = flags.FLAGS
 
 
 def set_mnist_flags():
-    try:
-        flags.DEFINE_integer('BATCH_SIZE', 64, 'Size of training batches')
-    except argparse.ArgumentError:
-        pass
-
     flags.DEFINE_integer('NUM_CLASSES', 10, 'Number of classification classes')
     flags.DEFINE_integer('IMAGE_ROWS', 28, 'Input row dimension')
     flags.DEFINE_integer('IMAGE_COLS', 28, 'Input column dimension')
