@@ -37,7 +37,7 @@ def main(model_name, model_type):
     tf_train(x, y, model, X_train, Y_train, data_gen)
 
     # Finally print the result!
-    test_error = tf_test_error_rate(model, x, X_test, Y_test)
+    _, _, test_error = tf_test_error_rate(model, x, X_test, Y_test)
     print('Test error: %.1f%%' % test_error)
     save_model(model, model_name)
     json_string = model.to_json()

@@ -9,6 +9,8 @@ import sys
 
 FLAGS = flags.FLAGS
 EVAL_FREQUENCY = 100
+BATCH_SIZE = 64
+BATCH_EVAL_NUM = 100
 
 
 def batch_eval(tf_inputs, tf_outputs, numpy_inputs):
@@ -56,12 +58,13 @@ def batch_eval(tf_inputs, tf_outputs, numpy_inputs):
     return out
 
 
-def tf_train(x, y, model, X_train, Y_train, generator, x_advs=None):
-    old_vars = set(tf.all_variables())
+def tf_train(x, y, model, X_train, Y_train, generator, x_advs=None, benign=None, cross_lip=None):
+    old_vars = set(tf.global_variables())
     train_size = Y_train.shape[0]
 
     # Generate cross-entropy loss for training
     logits = model(x)
+    # print(K.int_shape(logits))
     preds = K.softmax(logits)
     l1 = gen_adv_loss(logits, y, mean=True)
 
@@ -70,31 +73,39 @@ def tf_train(x, y, model, X_train, Y_train, generator, x_advs=None):
         idx = tf.placeholder(dtype=np.int32)
         logits_adv = model(tf.stack(x_advs)[idx])
         l2 = gen_adv_loss(logits_adv, y, mean=True)
-        loss = 0.5*(l1+l2)
+        if benign == 0:
+            loss = l2
+        elif benign == 1:
+            loss = 0.5 * (l1 + l2)
     else:
         l2 = tf.constant(0)
         loss = l1
 
     optimizer = tf.train.AdamOptimizer().minimize(loss)
 
+    saver = tf.train.Saver(set(tf.global_variables()) - old_vars)
+
     # Run all the initializers to prepare the trainable parameters.
     K.get_session().run(tf.initialize_variables(
-        set(tf.all_variables()) - old_vars))
+        set(tf.global_variables()) - old_vars))
     start_time = time.time()
     print('Initialized!')
 
     # Loop through training steps.
-    num_steps = int(FLAGS.NUM_EPOCHS * train_size + FLAGS.BATCH_SIZE - 1) // FLAGS.BATCH_SIZE
+    num_steps = int(FLAGS.NUM_EPOCHS * train_size + BATCH_SIZE - 1) // BATCH_SIZE
 
     step = 0
+    training_loss = 0
+    epoch_count = 0
+    step_old = 0
     for (batch_data, batch_labels) \
-            in generator.flow(X_train, Y_train, batch_size=FLAGS.BATCH_SIZE):
+        in generator.flow(X_train, Y_train, batch_size=BATCH_SIZE):
 
-        if len(batch_data) < FLAGS.BATCH_SIZE:
-            k = FLAGS.BATCH_SIZE - len(batch_data)
+        if len(batch_data) < BATCH_SIZE:
+            k = BATCH_SIZE - len(batch_data)
             batch_data = np.concatenate([batch_data, X_train[0:k]])
             batch_labels = np.concatenate([batch_labels, Y_train[0:k]])
-        
+
         feed_dict = {x: batch_data,
                      y: batch_labels,
                      K.learning_phase(): 1}
@@ -109,25 +120,38 @@ def tf_train(x, y, model, X_train, Y_train, generator, x_advs=None):
             K.get_session().run([optimizer, loss, l1, l2, preds]
                                 + [model.updates],
                                 feed_dict=feed_dict)
+        training_loss += curr_loss
 
-        if step % EVAL_FREQUENCY == 0:
+        epoch = float(step) * BATCH_SIZE / train_size
+        if epoch >= epoch_count:
+            epoch_count += 1
             elapsed_time = time.time() - start_time
             start_time = time.time()
             print('Step %d (epoch %.2f), %.2f s' %
-                (step, float(step) * FLAGS.BATCH_SIZE / train_size,
-                 elapsed_time))
+                  (step, float(step) * BATCH_SIZE / train_size,
+                   elapsed_time))
+            print('Training loss: %.3f' % (training_loss / (step - step_old)))
+            training_loss = 0
+            step_old = step
             print('Minibatch loss: %.3f (%.3f, %.3f)' % (curr_loss, curr_l1, curr_l2))
 
-            print('Minibatch error: %.1f%%' % error_rate(curr_preds, batch_labels))
+            _, _, minibatch_error = error_rate(curr_preds, batch_labels)
 
-            sys.stdout.flush()
+            print('Minibatch error: %.1f%%' % minibatch_error)
+
+        # if epoch % 10 == 0 or (step == (num_steps-1)):
+        #     save_path = saver.save(K.get_session(), "/tmp/model.ckpt")
+        #     save_model(model, 'tmp/model.ckpt')
+        #     print("Model saved in file: %s" % 'model.ckpt')
+
+        sys.stdout.flush()
 
         step += 1
         if step == num_steps:
             break
 
 
-def tf_test_error_rate(model, x, X_test, y_test):
+def tf_test_error_rate(model, x, X_test, y_test, save=False, name=None):
     """
     Compute test error.
     """
@@ -138,14 +162,25 @@ def tf_test_error_rate(model, x, X_test, y_test):
 
     predictions = batch_eval([x], [eval_prediction], [X_test])[0]
 
-    return error_rate(predictions, y_test)
+    return error_rate(predictions, y_test, save=save, name=name, X_adv=X_test)
 
 
-def error_rate(predictions, labels):
+def error_rate(predictions, labels, save=False, name=None, X_adv=None):
     """
     Return the error rate in percent.
     """
 
     assert len(predictions) == len(labels)
 
-    return 100.0 - (100.0 * np.sum(np.argmax(predictions, 1) == np.argmax(labels, 1)) / predictions.shape[0])
+    probs = np.max(predictions, axis=1)
+
+    preds = np.argmax(predictions, axis=1)
+
+    orig = np.argmax(labels, axis=1)
+
+    if save:
+        np.savez(file=name, X=X_adv, Y=orig, pred=preds, prob=probs)
+
+    error_rate = 100.0 - (100.0 * np.sum(preds == orig) / predictions.shape[0])
+
+    return preds, orig, error_rate

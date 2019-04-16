@@ -38,11 +38,11 @@ def main(attack, src_model_name, target_model_names):
 
     # simply compute test error
     if attack == "test":
-        err = tf_test_error_rate(src_model, x, X_test, Y_test)
+        _, _, err = tf_test_error_rate(src_model, x, X_test, Y_test)
         print '{}: {:.1f}'.format(basename(src_model_name), err)
 
         for (name, target_model) in zip(target_model_names, target_models):
-            err = tf_test_error_rate(target_model, x, X_test, Y_test)
+            _, _, err = tf_test_error_rate(target_model, x, X_test, Y_test)
             print '{}: {:.1f}'.format(basename(name), err)
         return
 
@@ -79,11 +79,11 @@ def main(attack, src_model_name, target_model_names):
         r = np.clip(X_adv - X_test, -args.eps, args.eps)
         X_adv = X_test + r
 
-        err = tf_test_error_rate(src_model, x, X_adv, Y_test)
+        _, _, err = tf_test_error_rate(src_model, x, X_adv, Y_test)
         print '{}->{}: {:.1f}'.format(basename(src_model_name), basename(src_model_name), err)
 
         for (name, target_model) in zip(target_model_names, target_models):
-            err = tf_test_error_rate(target_model, x, X_adv, Y_test)
+            _, _, err = tf_test_error_rate(target_model, x, X_adv, Y_test)
             print '{}->{}: {:.1f}'.format(basename(src_model_name), basename(name), err)
 
         return
@@ -92,12 +92,12 @@ def main(attack, src_model_name, target_model_names):
     X_adv = batch_eval([x, y], [adv_x], [X_test, Y_test])[0]
 
     # white-box attack
-    err = tf_test_error_rate(src_model, x, X_adv, Y_test)
+    _, _, err = tf_test_error_rate(src_model, x, X_adv, Y_test)
     print '{}->{}: {:.1f}'.format(basename(src_model_name), basename(src_model_name), err)
 
     # black-box attack
     for (name, target_model) in zip(target_model_names, target_models):
-        err = tf_test_error_rate(target_model, x, X_adv, Y_test)
+        _, _, err = tf_test_error_rate(target_model, x, X_adv, Y_test, save=True, name=args.attack)
         print '{}->{}: {:.1f}'.format(basename(src_model_name), basename(name), err)
 
 
