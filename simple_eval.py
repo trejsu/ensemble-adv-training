@@ -83,7 +83,7 @@ def main(attack, src_model_name, target_model_names):
         print '{}->{}: {:.1f}'.format(basename(src_model_name), basename(src_model_name), err)
 
         for (name, target_model) in zip(target_model_names, target_models):
-            _, _, err = tf_test_error_rate(target_model, x, X_adv, Y_test)
+            _, _, err = tf_test_error_rate(target_model, x, X_adv, Y_test, save=True, name=args.attack)
             print '{}->{}: {:.1f}'.format(basename(src_model_name), basename(name), err)
 
         return
